@@ -1,11 +1,11 @@
 name: Auto-Seed Lovable Constraints
 
-# Since GitHub Actions doesn't support 'repository' event triggers,
-# this workflow runs on a schedule and checks for new repositories
+# This workflow is triggered by organization webhook when new repos are created
+# No polling - purely event-driven!
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'  # Every 5 minutes
+  repository_dispatch:
+    types: [repository_created]
   workflow_dispatch:  # Manual trigger for testing
 
 jobs:
@@ -13,55 +13,56 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check repository creator
+        id: check_creator
+        run: |
+          # Only process repos created by j-bob-wm
+          CREATOR="${{ github.event.client_payload.creator }}"
+          REPO_NAME="${{ github.event.client_payload.repository }}"
+
+          echo "Repository: $REPO_NAME"
+          echo "Creator: $CREATOR"
+
+          # Filter by creator only (no project name restrictions)
+          if [ "$CREATOR" = "j-bob-wm" ]; then
+            echo "✓ Creator is j-bob-wm, proceeding with seeding"
+            echo "should_seed=true" >> $GITHUB_OUTPUT
+            echo "repo_name=$REPO_NAME" >> $GITHUB_OUTPUT
+          else
+            echo "✗ Creator is $CREATOR, not j-bob-wm - skipping"
+            echo "should_seed=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout seeding script
+        if: steps.check_creator.outputs.should_seed == 'true'
         uses: actions/checkout@v4
         with:
           repository: wrapmate/lovable-prototype-template
           token: ${{ secrets.GH_PAT }}
           path: template
 
-      - name: Find and process new repos
+      - name: Seed constraints
+        if: steps.check_creator.outputs.should_seed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          echo "Checking for new Lovable repositories..."
+          REPO_NAME="${{ steps.check_creator.outputs.repo_name }}"
 
-          # Get repos created in last 10 minutes
-          CUTOFF=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Seeding constraints for: $REPO_NAME"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-          # Query org repos (with pagination to get all repos)
-          REPOS=$(gh api --paginate /orgs/wrapmate/repos \
-            --jq ".[] | select(.created_at > \"$CUTOFF\") | select(.name | startswith(\"proto-\") or startswith(\"lovable-\")) | .name" \
-            2>/dev/null || echo "")
-
-          if [ -z "$REPOS" ]; then
-            echo "No new repositories found"
+          # Check if constraints already exist
+          if gh api "/repos/wrapmate/$REPO_NAME/contents/.lovable/constraints.md" >/dev/null 2>&1; then
+            echo "✓ Constraints already exist, skipping"
             exit 0
           fi
 
-          echo "Found repositories: $REPOS"
-
-          # Process each repo
-          for REPO_NAME in $REPOS; do
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "Processing: $REPO_NAME"
-
-            # Check if constraints exist
-            if gh api "/repos/wrapmate/$REPO_NAME/contents/.lovable/constraints.md" >/dev/null 2>&1; then
-              echo "✓ Constraints already exist"
-              continue
-            fi
-
-            echo "Seeding constraints..."
-
-            # Run the seeding script
-            cd template
-            chmod +x scripts/seed-lovable-constraints.sh
-            ./scripts/seed-lovable-constraints.sh "$REPO_NAME" || echo "⚠ Seeding failed for $REPO_NAME"
-            cd ..
-
-            echo "✓ Completed $REPO_NAME"
-          done
+          # Run the seeding script
+          cd template
+          chmod +x scripts/seed-lovable-constraints.sh
+          ./scripts/seed-lovable-constraints.sh "$REPO_NAME"
 
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Workflow completed"
+          echo "✅ Seeding completed successfully!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

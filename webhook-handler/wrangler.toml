@@ -1,0 +1,13 @@
+name = "wrapmate-github-webhook"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+# Deploy with: wrangler deploy
+# Add secret with: wrangler secret put GITHUB_TOKEN
+
+[vars]
+# Public environment variables (if needed)
+
+# Secrets (add via CLI):
+# - GITHUB_TOKEN: Your GH_PAT token with repo + workflow permissions
+# - WEBHOOK_SECRET: (Optional) For verifying GitHub webhook signatures
