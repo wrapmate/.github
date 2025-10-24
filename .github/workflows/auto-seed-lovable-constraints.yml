@@ -29,8 +29,8 @@ jobs:
           # Get repos created in last 10 minutes
           CUTOFF=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
 
-          # Query org repos
-          REPOS=$(gh api /orgs/wrapmate/repos \
+          # Query org repos (with pagination to get all repos)
+          REPOS=$(gh api --paginate /orgs/wrapmate/repos \
             --jq ".[] | select(.created_at > \"$CUTOFF\") | select(.name | startswith(\"proto-\") or startswith(\"lovable-\")) | .name" \
             2>/dev/null || echo "")
 
