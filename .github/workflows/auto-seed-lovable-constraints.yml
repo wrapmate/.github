@@ -16,20 +16,20 @@ jobs:
       - name: Check repository creator
         id: check_creator
         run: |
-          # Only process repos created by j-bob-wm
+          # Only process repos created by j-bob-wm or lovable-dev[bot]
           CREATOR="${{ github.event.client_payload.creator }}"
           REPO_NAME="${{ github.event.client_payload.repository }}"
 
           echo "Repository: $REPO_NAME"
           echo "Creator: $CREATOR"
 
-          # Filter by creator only (no project name restrictions)
-          if [ "$CREATOR" = "j-bob-wm" ]; then
-            echo "✓ Creator is j-bob-wm, proceeding with seeding"
+          # Filter by creator: j-bob-wm or lovable-dev[bot] (Lovable syncs)
+          if [ "$CREATOR" = "j-bob-wm" ] || [ "$CREATOR" = "lovable-dev[bot]" ]; then
+            echo "✓ Creator is $CREATOR (authorized), proceeding with seeding"
             echo "should_seed=true" >> $GITHUB_OUTPUT
             echo "repo_name=$REPO_NAME" >> $GITHUB_OUTPUT
           else
-            echo "✗ Creator is $CREATOR, not j-bob-wm - skipping"
+            echo "✗ Creator is $CREATOR (not authorized) - skipping"
             echo "should_seed=false" >> $GITHUB_OUTPUT
           fi
 
