@@ -1,16 +1,26 @@
 # Wrapmate Organization Settings
 
-Organization-level GitHub Actions workflows and configurations for Wrapmate.
+Organization-level configurations for Wrapmate.
 
-## Current Configuration
+## Lovable Constraint Seeding
 
-**Lovable Constraint Auto-Seeding:**
-- ✅ Triggers for repos: `proto-*` and `lovable-*`
-- ✅ Authorized creator: `j-bob-wm` (Product team)
-- ✅ Commits as: `devops-wm <devops@wrapmate.com>`
+**Current Approach:** Manual seeding script
+
+After Product syncs a Lovable project to GitHub, run:
+
+```bash
+cd ~/lovable-prototype-template
+./scripts/seed-lovable-constraints.sh proto-[project-name]
+```
+
+Takes ~10 seconds, adds all constraint files automatically.
+
+**Configuration:**
 - ✅ Template source: `wrapmate/lovable-prototype-template`
+- ✅ Commits as: `devops-wm <devops@wrapmate.com>`
+- ✅ Can be run by Product or Engineering
 
-**Required Secret:** `GH_PAT` (Personal Access Token)
+**Why Manual?** GitHub Actions cannot listen to `repository.created` events at the org level. Manual script is simple and reliable.
 
 ---
 
