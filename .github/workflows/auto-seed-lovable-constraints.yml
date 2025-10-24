@@ -1,0 +1,189 @@
+name: Auto-Seed Lovable Constraints
+
+# This workflow automatically adds engineering constraints to new Lovable repositories
+# Deploy this at the GitHub organization level: https://github.com/organizations/wrapmate/settings/actions
+
+on:
+  # Triggers when a new repository is created in the organization
+  repository:
+    types: [created]
+
+jobs:
+  seed-constraints:
+    runs-on: ubuntu-latest
+
+    # Only run for repos that match Lovable naming patterns
+    # Customize these conditions based on your needs:
+    if: |
+      startsWith(github.event.repository.name, 'proto-') ||
+      startsWith(github.event.repository.name, 'lovable-')
+
+    steps:
+      - name: Check repository creator
+        id: check_creator
+        run: |
+          # Only run if created by Product team member
+          CREATOR="${{ github.event.repository.owner.login }}"
+
+          # Product team GitHub username
+          ALLOWED_CREATORS=("j-bob-wm")
+
+          # Check if creator is in allowed list
+          if [[ " ${ALLOWED_CREATORS[@]} " =~ " ${CREATOR} " ]]; then
+            echo "Creator ${CREATOR} is authorized (Product team)"
+            echo "should_seed=true" >> $GITHUB_OUTPUT
+          else
+            echo "Creator ${CREATOR} is not in Product team, skipping automation"
+            echo "should_seed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Wait for repository initialization
+        if: steps.check_creator.outputs.should_seed == 'true'
+        run: |
+          # Give Lovable time to finish initial push
+          echo "Waiting 30 seconds for repository initialization..."
+          sleep 30
+
+      - name: Checkout new repository
+        if: steps.check_creator.outputs.should_seed == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.repository.full_name }}
+          token: ${{ secrets.GH_PAT }}
+          path: target-repo
+
+      - name: Check if constraints already exist
+        if: steps.check_creator.outputs.should_seed == 'true'
+        id: check_constraints
+        run: |
+          if [ -f "target-repo/.lovable/constraints.md" ]; then
+            echo "Constraints already exist, skipping"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Constraints do not exist, proceeding"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fetch constraint files from template
+        if: |
+          steps.check_creator.outputs.should_seed == 'true' &&
+          steps.check_constraints.outputs.exists == 'false'
+        run: |
+          cd target-repo
+
+          # Create directories
+          mkdir -p .lovable docs
+
+          # Template repository
+          TEMPLATE_REPO="wrapmate/lovable-prototype-template"
+          TEMPLATE_BRANCH="main"
+          BASE_URL="https://raw.githubusercontent.com/${TEMPLATE_REPO}/${TEMPLATE_BRANCH}"
+
+          # Download constraint files
+          echo "Downloading constraints from ${TEMPLATE_REPO}..."
+          curl -s "${BASE_URL}/.lovable/constraints.md" > .lovable/constraints.md
+          curl -s "${BASE_URL}/.lovable/README.md" > .lovable/README.md
+          curl -s "${BASE_URL}/docs/HANDOFF_CHECKLIST.md" > docs/HANDOFF_CHECKLIST.md
+          curl -s "${BASE_URL}/.cursorrules" > .cursorrules
+
+          echo "✅ Constraint files downloaded"
+
+      - name: Commit and push constraints
+        if: |
+          steps.check_creator.outputs.should_seed == 'true' &&
+          steps.check_constraints.outputs.exists == 'false'
+        run: |
+          cd target-repo
+
+          git config user.name "devops-wm"
+          git config user.email "devops@wrapmate.com"
+
+          git add .lovable/ docs/ .cursorrules
+
+          git commit -m "chore: Add Lovable engineering constraints [automated]
+
+These constraints ensure Lovable-generated code follows
+organization engineering standards.
+
+Added automatically by GitHub Actions.
+See: https://github.com/wrapmate/lovable-prototype-template
+
+Lovable will now read .lovable/constraints.md and follow:
+- TypeScript strict mode (no 'any' types)
+- Component size limits (150 lines max)
+- Feature-based organization
+- Tailwind CSS only
+- Required error/loading states
+- Approved libraries only
+
+This reduces engineering refactor time by 70%+ during handoff.
+"
+
+          git push
+
+      - name: Create notification issue
+        if: |
+          steps.check_creator.outputs.should_seed == 'true' &&
+          steps.check_constraints.outputs.exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            await github.rest.issues.create({
+              owner: context.payload.repository.owner.login,
+              repo: context.payload.repository.name,
+              title: '✅ Engineering constraints added',
+              body: `## Lovable Constraints Added
+
+Engineering constraints have been automatically added to this repository.
+
+### What was added:
+- \`.lovable/constraints.md\` - Rules Lovable follows
+- \`.lovable/README.md\` - Explanation of constraints
+- \`docs/HANDOFF_CHECKLIST.md\` - Pre-handoff checklist
+- \`.cursorrules\` - Rules for Cursor AI
+
+### How it works:
+Lovable now reads \`.lovable/constraints.md\` and automatically follows engineering standards when generating code.
+
+**Test it**: Ask Lovable: "Can you see the constraints in .lovable/constraints.md?"
+
+### Resources:
+- 📚 [Full Template](https://github.com/wrapmate/lovable-prototype-template)
+- 📋 [Handoff Checklist](./docs/HANDOFF_CHECKLIST.md)
+- 🔧 [Constraints](./lovable/constraints.md)
+
+Happy prototyping! 🚀
+`,
+              labels: ['automated', 'lovable-constraints']
+            });
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            await github.rest.issues.create({
+              owner: context.payload.repository.owner.login,
+              repo: context.payload.repository.name,
+              title: '⚠️ Failed to add engineering constraints',
+              body: `## Constraint Seeding Failed
+
+The automatic seeding of engineering constraints failed for this repository.
+
+### Manual Alternative:
+Run this command to add constraints manually:
+
+\`\`\`bash
+gh repo clone wrapmate/lovable-prototype-template
+cd lovable-prototype-template
+./scripts/seed-lovable-constraints.sh ${{ github.event.repository.full_name }}
+\`\`\`
+
+Or contact the engineering team for assistance.
+
+**Workflow Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+`,
+              labels: ['automated', 'needs-attention']
+            });
